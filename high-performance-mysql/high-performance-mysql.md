@@ -137,3 +137,5 @@ MVCC 可以看作是 row-level locking 变相的实现方式。
 
 ![mvcc](mvcc.gif)
 
+如上图中，当前查询对应的 SCN(System Change Number) 是 10023，只会查询 SCN 小于等于 10023 的记录。
+
