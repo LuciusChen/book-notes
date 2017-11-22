@@ -135,5 +135,5 @@ MVCC 可以看作是 row-level locking 变相的实现方式。
 
 > MVCC works only with the REPEATABLE READ and READ COMMITTED isolation levels.
 
-
+![mvcc](mvcc.gif)
 
