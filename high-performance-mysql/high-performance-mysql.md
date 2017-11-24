@@ -255,6 +255,22 @@ mysql> RENAME TABLE my_summary TO my_summary_old, my_summary_new TO my_summary;
 
 ##### Counter Tables
 
+> An application that keeps counts in a table can run into concurrency problems when updating the counters. Such tables are very common in web applications. You can use them to cache the number of friends a user has, the number of downloads of a file, and so on. It’s often a good idea to build a separate table for the counters, to keep it small and fast. Using a separate table can help you avoid query cache invalidations and lets you use some of the more advanced techniques we show in this section.
+> 
+> To keep things as simple as possible, suppose you have a counter table with a single row that just counts hits on your website:
+>
+```
+mysql> CREATE TABLE hit_counter (
+-> cnt int unsigned not null 
+-> ) ENGINE=InnoDB;
+``` 
+>
+> Each hit on the website updates the counter:
+> 
+```
+mysql> UPDATE hit_counter SET cnt = cnt + 1;
+```
+> 
 > The problem is that this single row is effectively a global “mutex” for any transaction that updates the counter. It will serialize those transactions. You can get higher concurrency by keeping more than one row and updating a random row. This requires the following change to the table:
 > 
 ```
@@ -278,5 +294,44 @@ mysql> SELECT SUM(cnt) FROM hit_counter;
 >
 
 通过预置的记录，随机增加 cnt，避免在同一条记录上更新时的互斥。（以前都没有过这样的思路）
+
+> A common requirement is to start new counters every so often (for example, once a day). If you need to do this, you can change the schema slightly:
+> 
+```
+mysql> CREATE TABLE daily_hit_counter (
+-> day date not null, 
+-> slot tinyint unsigned not null, 
+-> cnt int unsigned not null, 
+-> primary key(day, slot) 
+-> ) ENGINE=InnoDB;
+```
+>
+> You don’t want to pregenerate rows for this scenario. Instead, you can use ON DUPLICATE KEY UPDATE:
+> 
+```
+mysql> INSERT INTO daily_hit_counter(day, slot, cnt) 
+-> VALUES(CURRENT_DATE, RAND() * 100, 1) 
+-> ON DUPLICATE KEY UPDATE cnt = cnt + 1;
+```
+>
+> If you want to reduce the number of rows to keep the table smaller, you can write a periodic job that merges all the results into slot 0 and deletes every other slot:
+> 
+```
+mysql> UPDATE daily_hit_counter as c 
+    -> INNER JOIN ( 
+    -> SELECT day, SUM(cnt) AS cnt, MIN(slot) AS mslot 
+    -> FROM daily_hit_counter 
+    -> GROUP BY day 
+    -> ) AS x USING(day) 
+    -> SET c.cnt = IF(c.slot = x.mslot, x.cnt, 0), 
+    -> c.slot = IF(c.slot = x.mslot, 0, c.slot); 
+mysql> DELETE FROM daily_hit_counter WHERE slot <> 0 AND cnt = 0;
+```
+
+将所有的计数记录都合并到一条记录，将其他所有记录删除来减少表内的记录数。
+
+#### Speeding Up ALTER TABLE
+
+##### Modifying Only the .frm File
 
 
