@@ -131,11 +131,152 @@ MVCC 可以看作是 row-level locking 变相的实现方式。
 
 > `UPDATE` InnoDB writes a new copy of the row, using the system version number for the new row’s version. It also writes the system version number as the old row’s deletion version.
 
-上述的规则保证了可重复。
+上述的规则保证了可重复读的隔离级别。
 
 > MVCC works only with the REPEATABLE READ and READ COMMITTED isolation levels.
 
 ![mvcc](mvcc.gif)
 
 如上图中，当前查询对应的 SCN(System Change Number) 是 10023，只会查询 SCN 小于等于 10023 的记录。
+
+## Profiling Server Performance
+
+### Introduction to Performance Optimization
+
+> Our definition is that performance is measured by the time required to complete a task. In other words, **performance is response time**.
+> 
+> A database server’s performance is measured by query response time, and the unit of measurement is time per query.
+> 
+> But this is a trap. Resources are there to be consumed. Sometimes making things faster requires that you increase resource consumption. We’ve upgraded many times from an old version of MySQL with an ancient version of InnoDB, and witnessed a dramatic increase in CPU utilization as a result. This is usually nothing to be concerned about. It usually means that the newer version of InnoDB is spending more time doing useful work and less time fighting with itself.
+> 
+> So if the goal is to reduce response time, we need to understand why the server requires a certain amount of time to respond to a query, and reduce or eliminate whatever unnecessary work it’s doing to achieve the result. In other words, we need to measure where the time goes. This leads to our second important principle of optimization: **you cannot reliably optimize what you cannot measure**. 
+> 
+> First, some tasks aren’t worth optimizing because they contribute such a small portion of response time overall. Because of Amdahl’s Law, a query that consumes only 5% of total response time can contribute only 5% to overall speedup, no matter how much faster you make it. Second, if it costs you a thousand dollars to optimize a task and the business ends up making no additional money as a result, you just deoptimized the business by a thousand dollars. Thus, optimization should halt when the cost of improvement outweighs the benefit.
+
+## Optimizing Schema and Data Types
+
+### Choosing Optimal Data Types
+
+> Avoid NULL if possible.
+> 
+> **A lot of tables include nullable columns even when the application does not need to store NULL (the absence of a value), merely because it’s the default. It’s usually best to specify columns as NOT NULL unless you intend to store NULL in them.**
+>
+> It’s harder for MySQL to optimize queries that refer to nullable columns, because they make indexes, index statistics, and value comparisons more complicated. **A nullable column uses more storage space and requires special processing inside MySQL. When a nullable column is indexed, it requires an extra byte per entry and can even cause a fixed-size index (such as an index on a single integer column) to be converted to a variable-sized one in MyISAM.**
+>
+> **The performance improvement from changing NULL columns to NOT NULL is usually small, so don’t make it a priority to find and change them on an existing schema unless you know they are causing problems.** However, **if you’re planning to index columns, avoid making them nullable if possible.**
+>
+> There are exceptions, of course. For example, it’s worth mentioning that **InnoDB stores NULL with a single bit, so it can be pretty space-efficient for sparsely populated data.** This doesn’t apply to MyISAM, though.
+
+#### Real Numbers
+
+> The DECIMAL type is for storing exact fractional numbers. In MySQL 5.0 and newer, the DECIMAL type supports exact math. MySQL 4.1 and earlier used floating-point math to perform computations on DECIMAL values, which could give strange results because of loss of precision. In these versions of MySQL, **DECIMAL was only a “storage type**.”
+>
+> The server itself performs DECIMAL math in MySQL 5.0 and newer, **because CPUs don’t support the computations directly. Floating-point math is significantly faster, because the CPU performs the computations natively.**
+
+对于低版本的 MySQL，Decimal 只是一个存储类型，实际运算的时候仍是浮点数运算，因此会丢失精度。CPU 并不支持 Decimal 的直接运算，所以高版本的 MySQL 会在自身的 Server 中进行 Decimal 的运算。
+
+> DECIMAL numbers were converted to DOUBLEs for computational purposes
+>
+> Floating-point types typically use less space than DECIMAL to store the same range of values. A FLOAT column uses four bytes of storage. DOUBLE consumes eight bytes and has greater precision and a larger range of values than FLOAT. **As with integers, you’re choosing only the storage type; MySQL uses DOUBLE for its internal calculations on floating-point types.**
+> 
+> **Because of the additional space requirements and computational cost, you should use DECIMAL only when you need exact results for fractional numbers**—for example, when storing financial data. **But in some high-volume cases it actually makes sense to use a BIGINT instead, and store the data as some multiple of the smallest fraction of currency you need to handle.** Suppose you are required to store financial data to the tenthousandth of a cent. **You can multiply all dollar amounts by a million and store the result in a BIGINT, avoiding both the imprecision of floating-point storage and the cost of the precise DECIMAL math.**
+
+#### String Types
+
+##### VARCHAR and CHAR types
+
+> VARCHAR stores variable-length character strings and is the most common string data type. It can require less storage space than fixed-length types, because it uses only as much space as it needs (i.e., less space is used to store shorter values).
+> 
+> VARCHAR uses 1 or 2 extra bytes to record the value’s length: 1 byte if the column’s maximum length is 255 bytes or less, and 2 bytes if it’s more.
+> 
+> VARCHAR helps performance because it saves space. However, because the rows are variable-length, they can grow when you update them, which can cause extra work.
+
+VARCHAR 不设定长度虽然可以节省空间，但是在进行更新增加长度的时候会有额外的资源消耗，所以在创建表的时候都会设置一个长度。
+
+> CHAR is fixed-length: MySQL always allocates enough space for the specified number of characters. When storing a CHAR value, MySQL removes any trailing spaces.
+> 
+> CHAR is useful if you want to store very short strings, or if all the values are nearly the same length. For example, CHAR is a good choice for MD5 values for user passwords, which are always the same length. CHAR is also better than VARCHAR for data that’s changed frequently, because a fixed-length row is not prone to fragmentation. For very short columns, CHAR is also more efficient than VARCHAR; a CHAR(1) designed to hold only Y and N values will use only one byte in a single-byte character set, 1 but a VARCHAR(1) would use two bytes because of the length byte.
+
+#### Date and Time Types
+
+> The finest granularity of time MySQL can store is one second.
+
+##### DATETIME
+
+> This uses eight bytes of storage space.
+
+##### TIMESTAMP
+
+> TIMESTAMP uses only four bytes of storage
+
+DATETIME 会随着时区的改变而改变，而 TIMESTAMP 不会，所以一般都是使用 DATETIME。
+
+#### Choosing Identifiers
+
+> As we demonstrated earlier in this chapter, it’s a good idea to use the same data types in related tables, because you’re likely to use them for joins.
+
+> **MySQL does index NULLs, unlike Oracle, which doesn’t include non-values in indexes**.
+
+#### Normalization and Denormalization
+
+##### Pros and Cons of a Normalized Schema
+
+> People who ask for help with performance issues are frequently advised to normalize their schemas, especially if the workload is write-heavy. This is often good advice. It works well for the following reasons:
+>> - Normalized updates are usually faster than denormalized updates.
+>> - When the data is well normalized, there’s little or no duplicated data, so there’s less data to change.
+>> - Normalized tables are usually smaller, so they fit better in memory and perform better.
+>> - The lack of redundant data means there’s less need for DISTINCT or GROUP BY queries when retrieving lists of values. Consider the preceding example: it’s impossible to get a distinct list of departments from the denormalized schema without DIS TINCT or GROUP BY, but if DEPARTMENT is a separate table, it’s a trivial query.
+>
+> **The drawbacks of a normalized schema usually have to do with retrieval. Any nontrivial query on a well-normalized schema will probably require at least one join, and perhaps several.** This is not only expensive, but it can make some indexing strategies impossible. For example, normalizing may place columns in different tables that would benefit from belonging to the same index.
+
+##### A Mixture of Normalized and Denormalized
+
+关键就是在这两者间寻找平衡点
+
+#### Cache and Summary Tables
+
+> **When you rebuild summary and cache tables, you’ll often need their data to remain available during the operation. You can achieve this by using a “shadow table,” which is a table you build “behind” the real table.** When you’re done building it, you can swap the tables with an atomic rename. For example, if you need to rebuild my_summary, you can create my_summary_new, fill it with data, and swap it with the real table:
+
+>
+```
+mysql> DROP TABLE IF EXISTS my_summary_new, my_summary_old; 
+mysql> CREATE TABLE my_summary_new LIKE my_summary; 
+-- populate my_summary_new as desired 
+mysql> RENAME TABLE my_summary TO my_summary_old, my_summary_new TO my_summary;
+```
+> If you rename the original my_summary table my_summary_old before assigning the name my_summary to the newly rebuilt table, as we’ve done here, you can keep the old version until you’re ready to overwrite it at the next rebuild. It’s handy to have it for a quick rollback if the new table has a problem.
+
+这里之所以要将原表更名为 old ，新表替换原表工作，是因为可以检测新表是否有问题，若有问题则可以迅速回滚。
+
+##### Materialized Views
+
+- Materialized views are disk based and are updated periodically based upon the query definition.
+- Views are virtual only and run the query definition each time they are accessed.
+
+##### Counter Tables
+
+> The problem is that this single row is effectively a global “mutex” for any transaction that updates the counter. It will serialize those transactions. You can get higher concurrency by keeping more than one row and updating a random row. This requires the following change to the table:
+> 
+```
+mysql> CREATE TABLE hit_counter (
+-> slot tinyint unsigned not null primary key, 
+-> cnt int unsigned not null 
+-> ) ENGINE=InnoDB;
+```
+>
+> Prepopulate the table by adding 100 rows to it. Now the query can just choose a random slot and update it:
+>
+```
+mysql> UPDATE hit_counter SET cnt = cnt + 1 WHERE slot = RAND() * 100;
+```
+>
+> To retrieve statistics, just use aggregate queries:
+> 
+```
+mysql> SELECT SUM(cnt) FROM hit_counter;
+```
+>
+
+通过预置的记录，随机增加 cnt，避免在同一条记录上更新时的互斥。（以前都没有过这样的思路）
+
 
