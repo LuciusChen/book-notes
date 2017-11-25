@@ -348,6 +348,13 @@ SELECT * FROM table WHERE last_name="doe"
 
 因为 MySQL 的索引是 B+Tree 数据结构，表中的数据本身就是按照 B+Tree 的数据结构组成。最左匹配原则 (leftmost prefix of the index) 的原因也是来自于 B+Tree 的数据结构。
 
-索引建立的时候 root page 是地址是不变的，其他的 page 都是根据 root page 衍生，因此才有了最左匹配原则。具体可以参见 [B+Tree index structures in InnoDB](B+Tree-index-structures-in-InnoDB.md)
+索引建立的时候 root page 是地址是不变的，其他的 page 都是根据 root page 衍生，因此才有了最左匹配原则。具体可以参见 [Jeremy Cole](https://blog.jcole.us/) 的文章 “[B+Tree index structures in InnoDB](B+Tree-index-structures-in-InnoDB.md)”。
 
+#### Types of Indexes
+
+> There are many types of indexes, each designed to perform well for different purposes. Indexes are implemented in the storage engine layer, not the server layer. Thus, they are not standardized: indexing works slightly differently in each engine, and not all engines support all types of indexes. Even when multiple engines support the same index type, they might implement it differently under the hood.
+
+> MyISAM uses a prefix compression technique that makes indexes smaller, but InnoDB leaves values uncompressed in its indexes. Also, MyISAM indexes refer to the indexed rows by their physical storage locations, but InnoDB refers to them by their primary key values.
+
+InnoDB 的索引不是直接指向对应的记录，而是通过主键。其实如果直接获取建立索引列的值，是可以直接从索引中获取的，因为 InnoDB 的索引就是值的复制。
 
