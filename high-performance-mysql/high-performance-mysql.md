@@ -330,8 +330,24 @@ mysql> DELETE FROM daily_hit_counter WHERE slot <> 0 AND cnt = 0;
 
 将所有的计数记录都合并到一条记录，将其他所有记录删除来减少表内的记录数。
 
-#### Speeding Up ALTER TABLE
+## Indexing for High Performance
 
-##### Modifying Only the .frm File
+### Indexing Basics
+
+> An index contains values from one or more columns in a table. If you index more than one column, the column order is very important, because MySQL can only search efficiently on a leftmost prefix of the index. Creating an index on two columns is not the same as creating two separate single-column indexes, as you’ll see.
+
+举例说明下：
+
+```
+SELECT * FROM table WHERE first_name="john" AND last_name="doe"
+SELECT * FROM table WHERE first_name="john"
+SELECT * FROM table WHERE last_name="doe"
+```
+
+如果索引是 (`first_time`, `last_name`) 则 1 和 2 语句会用到索引，而 3 不会。如果索引是 (`last_name`, `first_time`) 则 1 和 3 语句可以用到索引，而 2 不会。
+
+因为 MySQL 的索引是 B+Tree 数据结构，表中的数据本身就是按照 B+Tree 的数据结构组成。最左匹配原则 (leftmost prefix of the index) 的原因也是来自于 B+Tree 的数据结构。
+
+索引建立的时候 root page 是地址是不变的，其他的 page 都是根据 root page 衍生，因此才有了最左匹配原则。具体可以参见 [B+Tree index structures in InnoDB](B+Tree-index-structures-in-InnoDB.md)
 
 
