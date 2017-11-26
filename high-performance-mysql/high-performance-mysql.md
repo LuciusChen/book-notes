@@ -673,10 +673,11 @@ mysql> EXPLAIN SELECT rental_id, staff_id FROM sakila.rental
 > 
 > ```
 > mysql> SELECT <cols> FROM profiles INNER JOIN (
-      -> SELECT <primary key cols> FROM profiles 
-      -> WHERE x.sex='M' ORDER BY rating LIMIT 100000, 10 
-      -> ) AS x USING(<primary key cols>);
+>     -> SELECT <primary key cols> FROM profiles 
+>     -> WHERE x.sex='M' ORDER BY rating LIMIT 100000, 10 
+>     -> ) AS x USING(<primary key cols>);
 > ```
+> 
 
 ## Query Performance Optimization
 
