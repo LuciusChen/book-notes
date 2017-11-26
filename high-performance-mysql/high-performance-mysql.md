@@ -695,11 +695,11 @@ mysql> EXPLAIN SELECT rental_id, staff_id FROM sakila.rental
 
 分页的目的和上面所讲的是一致的，只获取当前需要的。
 
-====
+---
 
 下面这两点记录一下，书中比较零散。
 
-- join 的执行是呈指数级增长的，总是前两个表的结果集再和后面的表去关联查询。
+- `JOIN` 的执行是呈指数级增长的，总是前两个表的结果集再和后面的表去关联查询。
 - 在结果集比较大的情况下，`EXISTS` 比 `IN` 要好，MySQL 中 `IN` 中的子查询实际执行过程中并不是先执行子查询。而是通过与外表建立连接，改写原本的 SQL。改写后的 SQL 会根据主表的每一行去与子表匹配。
     
     - `EXISTS` executes at high speed against `IN` : when the subquery results is very large.
