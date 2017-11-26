@@ -695,7 +695,7 @@ mysql> EXPLAIN SELECT rental_id, staff_id FROM sakila.rental
 
 分页的目的和上面所讲的是一致的，只获取当前需要的。
 
--
+====
 
 下面这两点记录一下，书中比较零散。
 
